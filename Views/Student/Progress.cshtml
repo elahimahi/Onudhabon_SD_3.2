@@ -4,6 +4,15 @@
     ViewData["Title"] = "Track Student Progress - Onudhabon";
 }
 
+<style>
+    @@media print {
+        .progress-no-print, .navbar, footer, .chat-fab, #chat-widget, .modal { display: none !important; }
+        body, .container { background: #fff !important; }
+        .student-progress-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #ddd !important; }
+        .student-progress-card canvas { max-width: 130px !important; max-height: 130px !important; }
+    }
+</style>
+
 <div class="container py-5">
     <!-- Header Section -->
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
@@ -18,10 +27,13 @@
             <h2 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2">
                 <i class="bi bi-graph-up-arrow text-primary"></i> Track Student Progress
             </h2>
-            <p class="text-muted mb-0">View detailed progress reports of the children local guardians have registered, including performance, and assessments.</p>
+            <p class="text-muted mb-0">@(Model.IsAdminView ? "Review learning progress across enrolled students and volunteer updates." : "View progress reports for students registered under your guardianship.")</p>
         </div>
 
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap progress-no-print">
+            <button type="button" onclick="window.print()" class="btn btn-outline-primary rounded-pill px-3.5 py-2 small shadow-sm d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-printer"></i><span>Print report</span>
+            </button>
             <a asp-action="Index" class="btn btn-outline-secondary rounded-pill px-3.5 py-2 small shadow-sm d-inline-flex align-items-center gap-1.5">
                 <i class="bi bi-person-lines-fill"></i>
                 <span>All Enrolled List</span>
@@ -50,16 +62,16 @@
     }
 
     <!-- Search & Filter Bar -->
-    <div class="card border-0 shadow-sm rounded-4 p-3 mb-4 bg-white">
+    <div class="card border-0 shadow-sm rounded-4 p-3 mb-4 bg-white progress-no-print">
         <form method="get" asp-action="Progress" class="row g-2 align-items-center">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="input-group">
                     <span class="input-group-text bg-light border-end-0 rounded-start-pill text-muted"><i class="bi bi-search"></i></span>
                     <input type="text" name="searchQuery" value="@Model.SearchQuery" class="form-control bg-light border-start-0 rounded-end-pill" placeholder="Search by student name, birth cert ID, father..." />
                 </div>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select name="selectedClass" class="form-select rounded-pill">
                     <option value="">All Classes</option>
                     @for (int i = 1; i <= 12; i++)
@@ -70,9 +82,28 @@
                 </select>
             </div>
 
-            <div class="col-md-4 d-flex gap-2">
-                <button type="submit" class="btn btn-primary rounded-pill px-4 flex-grow-1">Filter</button>
-                @if (!string.IsNullOrWhiteSpace(Model.SearchQuery) || !string.IsNullOrWhiteSpace(Model.SelectedClass))
+            <div class="col-md-2">
+                <select name="selectedSubject" class="form-select rounded-pill">
+                    <option value="">All Subjects</option>
+                    @foreach (var subject in Model.AvailableSubjects)
+                    {
+                        <option value="@subject" selected="@(Model.SelectedSubject == subject)">@subject</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="progressStatus" class="form-select rounded-pill">
+                    <option value="">Any Progress</option>
+                    <option value="not-started" selected="@(Model.ProgressStatus == "not-started")">Not started</option>
+                    <option value="in-progress" selected="@(Model.ProgressStatus == "in-progress")">In progress</option>
+                    <option value="complete" selected="@(Model.ProgressStatus == "complete")">Complete</option>
+                </select>
+            </div>
+
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary rounded-pill px-3 flex-grow-1">Filter</button>
+                @if (!string.IsNullOrWhiteSpace(Model.SearchQuery) || !string.IsNullOrWhiteSpace(Model.SelectedClass) || !string.IsNullOrWhiteSpace(Model.SelectedSubject) || !string.IsNullOrWhiteSpace(Model.ProgressStatus))
                 {
                     <a asp-action="Progress" class="btn btn-outline-secondary rounded-pill px-3">Clear</a>
                 }
@@ -84,7 +115,7 @@
     {
         var totalStudents = Model.Cards.Count;
         var avgProgress = totalStudents > 0 ? Model.Cards.Average(c => c.OverallProgressPercent) : 0.0;
-        var readyToPromote = Model.Cards.Count(c => c.CanPromote);
+        var curriculumComplete = Model.Cards.Count(c => c.OverallProgressPercent >= 100.0 && !c.IsDeclined);
         var totalLecturesCompleted = Model.Cards.Sum(c => c.CompletedLectures);
 
         <!-- Top SaaS KPI Metrics Ribbon -->
@@ -93,7 +124,7 @@
                 <div class="saas-metric-card highlight-primary">
                     <div>
                         <div class="metric-header">
-                            <span class="metric-title">Enrolled Students</span>
+                            <span class="metric-title">@(Model.IsAdminView ? "Students Tracked" : "Enrolled Students")</span>
                             <div class="metric-icon-badge bg-primary-subtle text-primary">
                                 <i class="bi bi-mortarboard-fill"></i>
                             </div>
@@ -102,7 +133,7 @@
                     </div>
                     <div class="metric-subtext">
                         <i class="bi bi-person-check text-primary"></i>
-                        <span>Under your guardianship</span>
+                        <span>@(Model.IsAdminView ? "Across enrolled students" : "Under your guardianship")</span>
                     </div>
                 </div>
             </div>
@@ -129,16 +160,16 @@
                 <div class="saas-metric-card highlight-warning">
                     <div>
                         <div class="metric-header">
-                            <span class="metric-title">Promotion Ready</span>
+                            <span class="metric-title">Curriculum Complete</span>
                             <div class="metric-icon-badge bg-warning-subtle text-warning">
                                 <i class="bi bi-award-fill"></i>
                             </div>
                         </div>
-                        <div class="metric-value text-warning-emphasis">@readyToPromote</div>
+                        <div class="metric-value text-warning-emphasis">@curriculumComplete</div>
                     </div>
                     <div class="metric-subtext">
                         <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2.5 py-0.5">
-                            <i class="bi bi-check2-all me-1"></i>100% Completed
+                            <i class="bi bi-check2-all me-1"></i>All planned lectures complete
                         </span>
                     </div>
                 </div>
@@ -148,7 +179,7 @@
                 <div class="saas-metric-card highlight-rose">
                     <div>
                         <div class="metric-header">
-                            <span class="metric-title">Lectures Mastered</span>
+                            <span class="metric-title">Lectures Completed</span>
                             <div class="metric-icon-badge" style="background-color: #fdf2f8; color: #e2136e;">
                                 <i class="bi bi-play-circle-fill"></i>
                             </div>
@@ -216,6 +247,17 @@
                                     <span class="text-dark fw-medium">Enrolled Subjects:</span>
                                     <span class="text-secondary">@(string.IsNullOrWhiteSpace(student.Subjects) ? (card.SubjectProgress.Any() ? string.Join(", ", card.SubjectProgress.Select(s => s.SubjectName)) : "General Curriculum") : student.Subjects)</span>
                                 </div>
+                                @if (!card.IsDeclined)
+                                {
+                                    <div class="d-flex gap-2 flex-wrap progress-no-print mt-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" onclick="openAiProgressModal(@student.Id, '@student.FullName.Replace("'", "\\'")')">
+                                            <i class="bi bi-stars me-1"></i>Update from volunteer note with AI
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-success rounded-pill" onclick="getAiLearningSummary(@student.Id)">
+                                            <i class="bi bi-lightbulb me-1"></i>AI learning summary
+                                        </button>
+                                    </div>
+                                }
                             </div>
 
                             <!-- Academic Grade & Exam Evaluation Section (Grade Part) -->
@@ -337,7 +379,7 @@
                                                                     style="@badgeBg font-size: 0.68rem; line-height: 1.1;" 
                                                                     @(!card.IsDeclined ? $"onclick=\"openLectureEvalModal({student.Id}, '{student.FullName.Replace("'", "\\'")}', '{student.ClassLevel?.Replace("Class", "").Trim() ?? "1"}', '{sub.SubjectName.Replace("'", "\\'")}', {lec}, '{eval.Topic.Replace("'", "\\'")}', {(eval.Marks.HasValue ? eval.Marks.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null")}, '{eval.Grade}', '{(eval.Remarks ?? "").Replace("'", "\\'")}', true, {sIdx})\"" : "disabled")
                                                                     title="Lecture @lec Completed &amp; Evaluated: @eval.Topic | Grade: @eval.Grade | Marks: @(eval.Marks.HasValue ? eval.Marks.Value.ToString() : "N/A") (@(!card.IsDeclined ? "Click to view/edit" : "Declined"))">
-                                                                <span>L@(lec): @eval.Grade</span>
+                                                                <span>L@(lec): @(string.IsNullOrWhiteSpace(eval.Grade) ? "Done" : eval.Grade)</span>
                                                                 <i class="bi bi-check2"></i>
                                                             </button>
                                                         }
@@ -479,7 +521,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- Complete all lectures to unlock promotion Button (Blue) -->
+                                    <!-- Promotion requires completion plus recorded passing assessment in each subject -->
                                     @if (card.CanPromote)
                                     {
                                         <form asp-action="PromoteStudent" method="post" class="m-0">
@@ -491,13 +533,19 @@
                                             </button>
                                         </form>
                                     }
+                                    else if (card.OverallProgressPercent >= 100.0 && !card.HasPassingAssessment)
+                                    {
+                                        <button type="button" class="btn btn-outline-warning w-100 fw-medium py-2 rounded-2" disabled title="A passing assessment is required in every subject">
+                                            Record a passing assessment in every subject to enable promotion
+                                        </button>
+                                    }
                                     else
                                     {
                                         <button type="button" 
                                                 class="btn btn-primary w-100 fw-medium py-2 rounded-2 shadow-sm text-center" 
                                                 style="background-color: #0d6efd; border: none; font-size: 0.82rem; cursor: not-allowed; opacity: 0.95;"
-                                                title="Complete all lectures across all subjects to unlock promotion">
-                                            Complete all lectures to unlock promotion
+                                                title="Complete all planned lectures across all subjects">
+                                            Complete all planned lectures to enable promotion
                                         </button>
                                     }
                                 }
@@ -774,6 +822,87 @@
     </div>
 </div>
 
+<section class="card border-0 shadow-sm rounded-4 p-3 p-md-4 mb-4 bg-white">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="fw-bold mb-1"><i class="bi bi-clock-history text-primary me-1"></i>Recent Progress Updates</h4>
+            <p class="text-muted small mb-0">Shows who changed progress and when. Volunteer notes themselves are not stored in this history.</p>
+        </div>
+    </div>
+    @if (Model.RecentChanges.Count == 0)
+    {
+        <div class="text-muted small">No progress updates have been recorded yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Student</th><th>Update</th><th>Changed by</th><th>Role</th><th>Date</th></tr></thead>
+                <tbody>
+                    @foreach (var change in Model.RecentChanges)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@change.Student.FullName</td>
+                            <td>@change.Summary</td>
+                            <td>@change.ChangedBy</td>
+                            <td><span class="badge bg-light text-dark border">@change.ChangedByRole</span></td>
+                            <td class="text-nowrap">@change.CreatedAt.ToString("dd MMM yyyy, h:mm tt 'UTC'")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<div class="modal fade" id="aiProgressModal" tabindex="-1" aria-labelledby="aiProgressModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title fw-bold" id="aiProgressModalTitle"><i class="bi bi-stars text-primary me-1"></i>AI Progress Assistant</h5>
+                    <div class="small text-muted" id="aiProgressStudentName"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="aiProgressStudentId" />
+                <label for="aiProgressNote" class="form-label fw-semibold">Volunteer progress note</label>
+                <textarea id="aiProgressNote" class="form-control" rows="4" maxlength="2000" placeholder="Example: Rafi completed Math lectures 1-3 on fractions. He scored 82 marks (A-) on lecture 3."></textarea>
+                <div class="form-text">AI prepares a draft for this student. Review each lecture, mark, and grade before saving. A blank grade records completion only.</div>
+                <div id="aiProgressMessage" class="small mt-2" role="status"></div>
+                <div id="aiProgressDraftWrap" class="mt-3 d-none">
+                    <h6 class="fw-bold">Review suggested updates</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead><tr><th>Subject</th><th>Lecture</th><th>Topic</th><th>Marks</th><th>Grade</th></tr></thead>
+                            <tbody id="aiProgressDraftRows"></tbody>
+                        </table>
+                    </div>
+                    <div id="aiProgressClarifications" class="alert alert-warning py-2 d-none"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                @Html.AntiForgeryToken()
+                <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="aiProgressAnalyzeBtn" class="btn btn-outline-primary rounded-pill" onclick="analyzeAiProgressNote()"><i class="bi bi-stars me-1"></i>Analyze note</button>
+                <button type="button" id="aiProgressApplyBtn" class="btn btn-primary rounded-pill d-none" onclick="applyAiProgressDraft()">Review and save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="aiSummaryModal" tabindex="-1" aria-labelledby="aiSummaryTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header"><div><h5 class="modal-title fw-bold" id="aiSummaryTitle"><i class="bi bi-lightbulb text-success me-1"></i>AI Learning Summary</h5><div class="small text-muted" id="aiSummaryStudent"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body"><div id="aiSummaryBody" class="small" aria-live="polite" style="white-space: pre-line;">Preparing summary…</div><div class="text-muted small mt-3">Based on recorded progress only. Use volunteer judgment for learning or promotion decisions.</div></div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Close</button></div>
+            @Html.AntiForgeryToken()
+        </div>
+    </div>
+</div>
+
 <!-- Modal for Lecture-by-Lecture Exam Evaluation (Approach A) -->
 <div class="modal fade" id="singleLectureEvalModal" tabindex="-1" aria-labelledby="singleLecModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -876,6 +1005,121 @@
 
     <script>
         const studentCharts = {};
+        let aiProgressDraft = [];
+
+        async function getAiLearningSummary(studentId) {
+            const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('aiSummaryModal'));
+            const body = document.getElementById('aiSummaryBody');
+            const name = document.getElementById('aiSummaryStudent');
+            body.textContent = 'Preparing summary from recorded progress…';
+            name.textContent = '';
+            modal.show();
+            try {
+                const token = document.querySelector('#aiSummaryModal input[name="__RequestVerificationToken"]')?.value;
+                const response = await fetch('/Student/GetAiLearningSummary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+                    body: JSON.stringify({ studentId })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || 'Could not prepare the summary.');
+                name.textContent = data.studentName;
+                body.textContent = data.summary;
+            } catch (error) { body.textContent = error.message || 'AI could not prepare the summary. Please try again.'; }
+        }
+
+        function openAiProgressModal(studentId, studentName) {
+            document.getElementById('aiProgressStudentId').value = studentId;
+            document.getElementById('aiProgressStudentName').textContent = studentName;
+            document.getElementById('aiProgressNote').value = '';
+            document.getElementById('aiProgressMessage').textContent = '';
+            document.getElementById('aiProgressDraftWrap').classList.add('d-none');
+            document.getElementById('aiProgressApplyBtn').classList.add('d-none');
+            aiProgressDraft = [];
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('aiProgressModal')).show();
+        }
+
+        async function analyzeAiProgressNote() {
+            const button = document.getElementById('aiProgressAnalyzeBtn');
+            const message = document.getElementById('aiProgressMessage');
+            const note = document.getElementById('aiProgressNote').value.trim();
+            if (!note) { message.textContent = 'Write the volunteer progress note first.'; return; }
+            button.disabled = true;
+            message.textContent = 'AI is organizing the note…';
+            try {
+                const token = document.querySelector('#aiProgressModal input[name="__RequestVerificationToken"]')?.value;
+                const response = await fetch('/Student/AnalyzeProgressNote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+                    body: JSON.stringify({ studentId: Number(document.getElementById('aiProgressStudentId').value), note })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || 'Could not analyze the note.');
+                aiProgressDraft = data.items || [];
+                renderAiProgressDraft(data.needsClarification || []);
+                message.textContent = aiProgressDraft.length ? 'Draft ready. Review or edit it before saving.' : 'No safe progress update could be extracted. Clarify the subject, completed lectures, or grade in the note.';
+            } catch (error) {
+                message.textContent = error.message || 'AI could not analyze the note. Please try again.';
+            } finally { button.disabled = false; }
+        }
+
+        function renderAiProgressDraft(clarifications) {
+            const body = document.getElementById('aiProgressDraftRows');
+            body.replaceChildren();
+            const grades = ['', 'A+', 'A', 'A-', 'B', 'C', 'D', 'F'];
+            aiProgressDraft.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.dataset.index = index;
+                const subject = document.createElement('td'); subject.textContent = item.subjectName;
+                const lectureCell = document.createElement('td');
+                const lecture = document.createElement('input'); lecture.type = 'number'; lecture.min = '1'; lecture.max = '100'; lecture.value = item.lectureNumber; lecture.className = 'form-control form-control-sm ai-draft-lecture'; lecture.style.width = '76px'; lectureCell.append(lecture);
+                const topicCell = document.createElement('td');
+                const topic = document.createElement('input'); topic.type = 'text'; topic.maxLength = 200; topic.value = item.topic || ''; topic.className = 'form-control form-control-sm ai-draft-topic'; topicCell.append(topic);
+                const marksCell = document.createElement('td');
+                const marks = document.createElement('input'); marks.type = 'number'; marks.min = '0'; marks.max = '100'; marks.step = '0.5'; marks.value = item.marks ?? ''; marks.className = 'form-control form-control-sm ai-draft-marks'; marks.style.width = '82px'; marksCell.append(marks);
+                const gradeCell = document.createElement('td');
+                const grade = document.createElement('select'); grade.className = 'form-select form-select-sm ai-draft-grade';
+                grades.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value || '—'; grade.append(option); });
+                grade.value = item.grade || ''; gradeCell.append(grade);
+                row.append(subject, lectureCell, topicCell, marksCell, gradeCell); body.append(row);
+            });
+            const warning = document.getElementById('aiProgressClarifications');
+            warning.textContent = (clarifications || []).join(' ');
+            warning.classList.toggle('d-none', !clarifications?.length);
+            document.getElementById('aiProgressDraftWrap').classList.toggle('d-none', !aiProgressDraft.length && !clarifications?.length);
+            document.getElementById('aiProgressApplyBtn').classList.toggle('d-none', !aiProgressDraft.length);
+        }
+
+        async function applyAiProgressDraft() {
+            const rows = [...document.querySelectorAll('#aiProgressDraftRows tr')];
+            const items = rows.map((row, index) => ({
+                ...aiProgressDraft[index],
+                lectureNumber: Number(row.querySelector('.ai-draft-lecture').value),
+                topic: row.querySelector('.ai-draft-topic').value.trim(),
+                marks: row.querySelector('.ai-draft-marks').value === '' ? null : Number(row.querySelector('.ai-draft-marks').value),
+                grade: row.querySelector('.ai-draft-grade').value || null
+            }));
+            if (!items.length) return;
+            const button = document.getElementById('aiProgressApplyBtn');
+            const message = document.getElementById('aiProgressMessage');
+            if (!confirm('Save these reviewed lecture completions and grades to this student\'s progress?')) return;
+            button.disabled = true;
+            try {
+                const token = document.querySelector('#aiProgressModal input[name="__RequestVerificationToken"]')?.value;
+                const response = await fetch('/Student/ApplyAiProgressDraft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+                    body: JSON.stringify({ studentId: Number(document.getElementById('aiProgressStudentId').value), items })
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || 'Could not save the reviewed draft.');
+                message.textContent = data.message;
+                window.location.reload();
+            } catch (error) {
+                message.textContent = error.message || 'Could not save the draft.';
+                button.disabled = false;
+            }
+        }
 
         // Subject labels & completion percentages per student
         const studentDataMap = {

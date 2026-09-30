@@ -12,18 +12,18 @@ namespace Onudhabon.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IMemoryCache _cache;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<PdfKnowledgeService> _logger;
 
         public PdfKnowledgeService(
             IHttpClientFactory httpClientFactory,
             IMemoryCache cache,
-            IServiceProvider serviceProvider,
+            ApplicationDbContext dbContext,
             ILogger<PdfKnowledgeService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _cache = cache;
-            _serviceProvider = serviceProvider;
+            _dbContext = dbContext;
             _logger = logger;
         }
 
@@ -53,6 +53,75 @@ namespace Onudhabon.Services
                 _logger.LogWarning(ex, "Failed to extract text from PDF stream.");
                 return string.Empty;
             }
+        }
+
+        public IReadOnlyList<PdfTextChunk> ExtractChunksFromStream(Stream stream, int maxPages = 40, int maxChunkCharacters = 2400)
+        {
+            try
+            {
+                using var document = PdfDocument.Open(stream);
+                var chunks = new List<PdfTextChunk>();
+                foreach (var page in document.GetPages().Take(maxPages))
+                {
+                    var text = page.Text?.Trim();
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    var pageChunks = SplitPageIntoChunks(text, maxChunkCharacters);
+                    for (var index = 0; index < pageChunks.Count; index++)
+                        chunks.Add(new PdfTextChunk(page.Number, index, pageChunks[index]));
+                }
+                return chunks;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to extract page-aware chunks from PDF stream.");
+                return Array.Empty<PdfTextChunk>();
+            }
+        }
+
+        private static List<string> SplitPageIntoChunks(string text, int maxCharacters)
+        {
+            var chunks = new List<string>();
+            var current = new StringBuilder();
+            foreach (var paragraph in Regex.Split(text, @"\r?\n\s*\r?\n").Select(part => part.Trim()).Where(part => part.Length > 0))
+            {
+                var remaining = paragraph;
+                while (remaining.Length > 0)
+                {
+                    var available = maxCharacters - current.Length - (current.Length > 0 ? 2 : 0);
+                    if (available <= 0)
+                    {
+                        chunks.Add(current.ToString());
+                        current.Clear();
+                        continue;
+                    }
+                    if (remaining.Length <= available)
+                    {
+                        if (current.Length > 0) current.AppendLine().AppendLine();
+                        current.Append(remaining);
+                        remaining = string.Empty;
+                        continue;
+                    }
+
+                    var cut = remaining.LastIndexOf(' ', Math.Max(0, available - 1), available);
+                    if (cut < 1) cut = available;
+                    var part = remaining[..cut].Trim();
+                    if (current.Length > 0 && current.Length + part.Length + 2 > maxCharacters)
+                    {
+                        chunks.Add(current.ToString());
+                        current.Clear();
+                    }
+                    if (current.Length > 0) current.AppendLine().AppendLine();
+                    current.Append(part);
+                    remaining = remaining[cut..].TrimStart();
+                    if (current.Length >= maxCharacters)
+                    {
+                        chunks.Add(current.ToString());
+                        current.Clear();
+                    }
+                }
+            }
+            if (current.Length > 0) chunks.Add(current.ToString());
+            return chunks;
         }
 
         public async Task<string> ExtractTextFromUrlAsync(string url, int maxPages = 30)
@@ -162,18 +231,66 @@ namespace Onudhabon.Services
             return combined;
         }
 
-        public async Task<string> GetGroundingContextForQueryAsync(string userQuery, string? attachedPdfText = null)
+        public async Task<string> GetGroundingContextForQueryAsync(string userQuery, Guid? documentId, string ownerKey, CancellationToken cancellationToken = default)
         {
             var sb = new StringBuilder();
 
-            // 1. Attached PDF from User Chat Session (in-memory, fast)
-            if (!string.IsNullOrWhiteSpace(attachedPdfText))
+            if (documentId.HasValue)
             {
-                sb.AppendLine("=== CURRENTLY ATTACHED PDF DOCUMENT ===");
-                var relevantDocExcerpt = ExtractRelevantExcerpt(attachedPdfText, userQuery, 35000);
-                sb.AppendLine(relevantDocExcerpt);
-                sb.AppendLine("======================================");
-                sb.AppendLine();
+                var document = await _dbContext.StudyDocuments
+                    .AsNoTracking()
+                    .Where(item => item.Id == documentId.Value && item.OwnerKey == ownerKey && item.ExpiresAt > DateTime.UtcNow)
+                    .Select(item => new { item.Id, item.FileName })
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (document == null)
+                {
+                    sb.AppendLine("The attached study document is unavailable or expired.");
+                }
+                else
+                {
+                    var queryWords = Regex.Matches(userQuery, @"[\p{L}\p{N}]{2,}")
+                        .Select(match => match.Value.ToLowerInvariant())
+                        .Distinct()
+                        .Take(16)
+                        .ToArray();
+
+                    var chunks = await _dbContext.StudyDocumentChunks
+                        .AsNoTracking()
+                        .Where(chunk => chunk.StudyDocumentId == document.Id)
+                        .Select(chunk => new { chunk.PageNumber, chunk.ChunkIndex, chunk.Content })
+                        .ToListAsync(cancellationToken);
+
+                    var selectedChunks = chunks
+                        .Select(chunk => new
+                        {
+                            chunk.PageNumber,
+                            chunk.ChunkIndex,
+                            chunk.Content,
+                            Score = queryWords.Count(word => chunk.Content.Contains(word, StringComparison.OrdinalIgnoreCase))
+                        })
+                        .Where(chunk => chunk.Score > 0)
+                        .OrderByDescending(chunk => chunk.Score)
+                        .ThenBy(chunk => chunk.PageNumber)
+                        .ThenBy(chunk => chunk.ChunkIndex)
+                        .Take(5)
+                        .ToList();
+
+                    sb.AppendLine($"=== SELECTED STUDY DOCUMENT: {document.FileName} ===");
+                    if (selectedChunks.Count == 0)
+                    {
+                        sb.AppendLine("No matching excerpts were found in this document. Do not infer an answer from unrelated pages.");
+                    }
+                    else
+                    {
+                        foreach (var chunk in selectedChunks)
+                        {
+                            sb.AppendLine($"[Source: {document.FileName} — Page {chunk.PageNumber}]");
+                            sb.AppendLine(chunk.Content);
+                        }
+                    }
+                    sb.AppendLine("=== END SELECTED STUDY DOCUMENT ===");
+                }
             }
 
             // 2. Search Relevant Platform Study Material PDFs
@@ -183,10 +300,7 @@ namespace Onudhabon.Services
                 var materials = await _cache.GetOrCreateAsync("active_platform_materials_cache", async entry =>
                 {
                     entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
-                    using var scope = _serviceProvider.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                    return await dbContext.Materials
+                    return await _dbContext.Materials
                         .Where(m => m.Status == "Active" && !string.IsNullOrEmpty(m.FileUrl))
                         .OrderByDescending(m => m.Date)
                         .Take(15)
@@ -198,7 +312,7 @@ namespace Onudhabon.Services
                             m.ClassLevel,
                             m.FileUrl
                         })
-                        .ToListAsync();
+                        .ToListAsync(cancellationToken);
                 });
 
                 if (materials != null && materials.Any())

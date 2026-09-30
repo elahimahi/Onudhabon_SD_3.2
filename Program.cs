@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Onudhabon.Data;
 using Onudhabon.Models;
@@ -63,6 +65,9 @@ builder.Services.AddMemoryCache();
 // AI & Knowledge Services (Gemini Cloud API & PDF Knowledge Base)
 builder.Services.AddSingleton<ILlmChatService, GeminiChatService>();
 builder.Services.AddScoped<IPdfKnowledgeService, PdfKnowledgeService>();
+builder.Services.AddScoped<IEducationalUploadAiService, EducationalUploadAiService>();
+builder.Services.AddScoped<IChatOrchestrator, ChatOrchestrator>();
+builder.Services.AddHostedService<ExpiredStudyDocumentCleanupService>();
 
 // Password Hasher for User
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
@@ -136,6 +141,41 @@ builder.Services.AddSession(options =>
 
 // Add MVC Services
 builder.Services.AddControllersWithViews();
+builder.Services.AddAntiforgery(options => options.HeaderName = "RequestVerificationToken");
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Too many AI requests. Please wait a moment and try again." },
+            cancellationToken);
+    };
+
+    options.AddPolicy("ai-chat", context => RateLimitPartition.GetFixedWindowLimiter(
+        GetAiRateLimitPartition(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 12,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+
+    options.AddPolicy("ai-upload", context => RateLimitPartition.GetFixedWindowLimiter(
+        GetAiRateLimitPartition(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 3,
+            Window = TimeSpan.FromHours(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+
+static string GetAiRateLimitPartition(HttpContext context) =>
+    context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? context.Session.Id;
 
 // Add CORS for Gateway Callbacks
 builder.Services.AddCors(options =>
@@ -177,6 +217,7 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseSession();
+app.UseRateLimiter();
 
 // Prevent browser from caching auth pages or authenticated pages (prevents back-button access after login)
 app.Use(async (context, next) =>

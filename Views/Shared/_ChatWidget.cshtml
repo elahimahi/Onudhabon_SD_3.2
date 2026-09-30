@@ -1,5 +1,6 @@
 <!-- Floating AI Chatbot Widget -->
 <div id="ai-chat-widget" class="ai-chat-container">
+    @Html.AntiForgeryToken()
     <!-- Floating Launcher Button -->
     <button id="toggle-chat-btn" class="chat-fab shadow-lg" type="button" aria-label="Open AI Assistant" title="Chat with Onudhabon AI">
         <!-- Chat Icon (Visible when closed) -->
@@ -68,27 +69,27 @@
                         <span class="sender-badge">Assistant</span>
                     </div>
                     <div class="chat-bubble bot-bubble">
-                        <div class="mb-1"><strong>Hello! I'm your Onudhabon AI Assistant.</strong> 👋</div>
-                        <div>I am here exclusively to assist you with the <strong>Onudhabon</strong> platform (lectures, materials, forum, donations, student tracking) and answer questions from any <strong>PDF document</strong> you upload.</div>
+                        <div class="mb-1"><strong>Hello! I'm your Onudhabon AI Study Assistant.</strong> 👋</div>
+                        <div>Ask school-subject questions in Bangla or English. Choose a study mode and class level below, or attach a PDF to study from your notes.</div>
                     </div>
                 </div>
             </div>
 
             <!-- Quick Suggestion Chips -->
             <div id="chat-suggestions" class="chat-suggestions-container">
-                <div class="suggestions-label">Quick Inquiries:</div>
+                <div class="suggestions-label">Try a study activity:</div>
                 <div class="d-flex flex-wrap gap-1.5">
-                    <button type="button" class="suggestion-chip" data-prompt="Where can I find recorded lectures?">
-                        <span class="chip-icon">🎥</span> Recorded Lectures
+                    <button type="button" class="suggestion-chip" data-mode="explain" data-prompt="Explain photosynthesis in simple words with one example.">
+                        <span class="chip-icon">🎥</span> Explain a topic
                     </button>
-                    <button type="button" class="suggestion-chip" data-prompt="Where can I find study materials?">
+                    <button type="button" class="suggestion-chip" data-mode="quiz" data-prompt="Quiz me on fractions, one question at a time.">
                         <span class="chip-icon">📄</span> Study Materials
                     </button>
-                    <button type="button" class="suggestion-chip" data-prompt="How can I donate to Onudhabon?">
-                        <span class="chip-icon">💖</span> Support / Donate
+                    <button type="button" class="suggestion-chip" data-mode="solve" data-prompt="Help me solve 2x + 5 = 13 step by step.">
+                        <span class="chip-icon">💖</span> Solve a problem
                     </button>
-                    <button type="button" class="suggestion-chip" data-prompt="What features does Onudhabon offer?">
-                        <span class="chip-icon">💡</span> Platform Guide
+                    <button type="button" class="suggestion-chip" data-mode="ask" data-prompt="How can I find study materials on Onudhabon?">
+                        <span class="chip-icon">💡</span> Platform guide
                     </button>
                 </div>
             </div>
@@ -106,6 +107,39 @@
                 <button type="button" id="remove-pdf-btn" class="remove-pdf-btn" title="Remove attached PDF" aria-label="Remove attached PDF">✕</button>
             </div>
 
+            <div class="study-controls">
+                <label class="study-control">
+                    <span>Study mode</span>
+                    <select id="study-mode" aria-label="Study mode">
+                        <option value="ask">Study chat</option>
+                        <option value="explain">Explain</option>
+                        <option value="summary">Summary</option>
+                        <option value="quiz">Quiz</option>
+                        <option value="solve">Step-by-step</option>
+                        <option value="notes">Study notes</option>
+                        <option value="exam">Exam prep</option>
+                    </select>
+                </label>
+                <label class="study-control">
+                    <span>Difficulty</span>
+                    <select id="study-difficulty" aria-label="Difficulty">
+                        <option value="basic">Basic</option>
+                        <option value="intermediate" selected>Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                    </select>
+                </label>
+                <label class="study-control">
+                    <span>Class</span>
+                    <select id="study-class-level" aria-label="Class level">
+                        <option value="">Choose</option>
+                        @for (var classLevel = 1; classLevel <= 12; classLevel++)
+                        {
+                            <option value="@classLevel">Class @classLevel</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
             <form id="chat-form" class="chat-input-form" onsubmit="return false;">
                 <input type="file" id="chat-pdf-file-input" accept=".pdf,application/pdf" style="display: none;" />
                 <div class="input-wrapper">
@@ -115,7 +149,7 @@
                         </svg>
                     </button>
                     <input type="text" id="chat-input" class="chat-input-field" 
-                           placeholder="Ask about Onudhabon or attach a PDF to ask questions..." 
+                           placeholder="Ask a school question or about Onudhabon..."
                            autocomplete="off" maxlength="1000" />
                     <button type="button" id="chat-send-btn" class="chat-send-btn" title="Send message" aria-label="Send message">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -126,7 +160,7 @@
                 </div>
             </form>
             <div class="chat-footer-note">
-                🔒 Dedicated to Onudhabon & Uploaded PDF Documents
+                🔒 Choose how you want to learn. Attach a PDF for source-based help.
             </div>
         </div>
     </div>
@@ -619,6 +653,41 @@
         padding: 10px 14px 8px;
     }
 
+    .study-controls {
+        display: grid;
+        grid-template-columns: 1.15fr 0.9fr 0.75fr;
+        gap: 7px;
+        margin-bottom: 8px;
+    }
+
+    .study-control {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        color: #64748b;
+        font-size: 0.64rem;
+        font-weight: 650;
+    }
+
+    .study-control select {
+        width: 100%;
+        min-width: 0;
+        padding: 5px 6px;
+        border: 1px solid #dbe3ef;
+        border-radius: 7px;
+        background: #f8fafc;
+        color: #334155;
+        font: inherit;
+        font-size: 0.7rem;
+        outline: none;
+    }
+
+    .study-control select:focus {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+    }
+
     /* Active Attached PDF Badge */
     .active-pdf-badge {
         display: flex;
@@ -820,6 +889,14 @@
     }
 
     @@media (max-width: 360px) {
+        .study-controls {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .study-control:last-child {
+            grid-column: 1 / -1;
+        }
+
         .ai-chat-container {
             bottom: 12px;
             right: 12px;
@@ -840,6 +917,7 @@
         const STORAGE_HISTORY_KEY = 'onudhabon_chat_history';
         const STORAGE_OPEN_KEY = 'onudhabon_chat_open';
         const BOT_AVATAR_URL = '/images/bot-avatar.svg';
+        const requestVerificationToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
 
         const toggleBtn = document.getElementById('toggle-chat-btn');
         const closeBtn = document.getElementById('close-chat-btn');
@@ -850,6 +928,9 @@
         const chatBody = document.getElementById('chat-body');
         const suggestionsBox = document.getElementById('chat-suggestions');
         const welcomeRow = document.getElementById('initial-welcome-row');
+        const studyModeSelect = document.getElementById('study-mode');
+        const difficultySelect = document.getElementById('study-difficulty');
+        const classLevelSelect = document.getElementById('study-class-level');
 
         // PDF Attachment elements
         const attachPdfBtn = document.getElementById('chat-attach-pdf-btn');
@@ -859,7 +940,7 @@
         const activePdfWordsSpan = document.getElementById('active-pdf-words');
         const removePdfBtn = document.getElementById('remove-pdf-btn');
 
-        let currentPdfText = null;
+        let currentPdfDocumentId = null;
         let currentPdfName = null;
 
         // Formats current time into a clean "12:15 PM" format
@@ -897,32 +978,29 @@
         function formatMessage(text) {
             if (!text) return '';
 
-            // 1. Sanitize HTML
-            let safe = text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
+            const links = [];
+            let safe = String(text).replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, rawUrl) => {
+                let parsedUrl;
+                try {
+                    parsedUrl = new URL(rawUrl.trim(), window.location.origin);
+                } catch {
+                    return label;
+                }
 
-            // 2. Bold: **text**
-            safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.origin !== window.location.origin)
+                    return label;
 
-            // 3. Italic: *text*
-            safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-            // 4. Inline code: `code`
-            safe = safe.replace(/`([^`]+)`/g, '<code class="bot-inline-code">$1</code>');
-
-            // 5. Markdown links: [Label](url) -> Interactive Navigation Action Pill
-            safe = safe.replace(/\[(.*?)\]\((.*?)\)/g, function (match, label, url) {
-                const cleanUrl = url.trim();
-                if (cleanUrl.toLowerCase().startsWith('javascript:')) return label;
-                return `<a href="${cleanUrl}" class="bot-nav-btn">
-                            <span>${label}</span>
+                const linkIndex = links.length;
+                links.push(`<a href="${escapeHtml(parsedUrl.href)}" class="bot-nav-btn">
+                            <span>${formatInlineText(label)}</span>
                             <svg class="bot-nav-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 8h10M9 4l4 4-4 4"/>
                             </svg>
-                        </a>`;
+                        </a>`);
+                return `CHATLINKTOKEN${linkIndex}END`;
             });
+
+            safe = formatInlineText(safe);
 
             // 6. Bullet points
             safe = safe.replace(/^\s*[-*]\s+(.*)$/gm, '• $1');
@@ -930,6 +1008,17 @@
             // 7. Convert newlines to line breaks
             safe = safe.replace(/\n/g, '<br>');
 
+            links.forEach((link, index) => {
+                safe = safe.replace(`CHATLINKTOKEN${index}END`, link);
+            });
+            return safe;
+        }
+
+        function formatInlineText(text) {
+            let safe = escapeHtml(text);
+            safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            safe = safe.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            safe = safe.replace(/`([^`]+)`/g, '<code class="bot-inline-code">$1</code>');
             return safe;
         }
 
@@ -972,7 +1061,7 @@
         }
 
         function escapeHtml(str) {
-            return str
+            return String(str)
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
@@ -1058,6 +1147,7 @@
             suggestionsBox.addEventListener('click', (e) => {
                 const chip = e.target.closest('.suggestion-chip');
                 if (chip && chip.dataset.prompt) {
+                    if (chip.dataset.mode && studyModeSelect) studyModeSelect.value = chip.dataset.mode;
                     chatInput.value = chip.dataset.prompt;
                     sendMessage();
                 }
@@ -1113,6 +1203,7 @@
                 try {
                     const res = await fetch('/Chat/UploadPdfForChat', {
                         method: 'POST',
+                        headers: { 'RequestVerificationToken': requestVerificationToken },
                         body: formData
                     });
 
@@ -1120,7 +1211,7 @@
                     loadRow.remove();
 
                     if (data.success) {
-                        currentPdfText = data.text;
+                        currentPdfDocumentId = data.documentId;
                         currentPdfName = data.fileName;
 
                         // Update Active PDF Banner
@@ -1144,7 +1235,7 @@
 
         // Remove / Detach PDF
         function detachPdf() {
-            currentPdfText = null;
+            currentPdfDocumentId = null;
             currentPdfName = null;
             if (activePdfBadge) activePdfBadge.style.display = 'none';
             if (attachPdfBtn) attachPdfBtn.classList.remove('has-file');
@@ -1191,7 +1282,7 @@
                 <div class="msg-bubble-wrapper">
                     <div class="msg-sender-meta">
                         <span class="sender-name">Onudhabon AI</span>
-                        <span class="sender-badge" style="background-color: #f1f5f9; color: #64748b;">${currentPdfText ? 'Analyzing Document' : 'Thinking'}</span>
+                        <span class="sender-badge" style="background-color: #f1f5f9; color: #64748b;">${currentPdfDocumentId ? 'Analyzing Document' : 'Thinking'}</span>
                     </div>
                     <div class="chat-bubble bot-bubble typing-bubble shadow-sm">
                         <span class="typing-dot"></span>
@@ -1204,22 +1295,27 @@
             scrollChatToBottom();
 
             try {
-                // Send current message and recent history context and active PDF text to server
+                // Send the opaque server-side document identifier; document text stays on the server.
                 const res = await fetch('/Chat/SendMessage', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': requestVerificationToken
+                    },
                     body: JSON.stringify({ 
                         message: text,
                         history: history.slice(-6),
-                        attachedPdfText: currentPdfText,
-                        attachedPdfName: currentPdfName
+                        documentId: currentPdfDocumentId,
+                        studyMode: studyModeSelect?.value || 'ask',
+                        difficulty: difficultySelect?.value || 'intermediate',
+                        classLevel: classLevelSelect?.value || ''
                     })
                 });
 
                 const data = await res.json();
                 loadingRow.remove();
 
-                const botReply = data.reply || 'I apologize, but I could not generate a response. Please try again.';
+                const botReply = data.reply || data.error || 'I apologize, but I could not generate a response. Please try again.';
                 const replyTime = getCurrentTime();
                 renderBubble('bot', botReply, replyTime);
 

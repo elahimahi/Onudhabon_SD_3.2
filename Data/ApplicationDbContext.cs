@@ -12,6 +12,7 @@ namespace Onudhabon.Data
 
         public DbSet<User> Users { get; set; }
         public DbSet<Student> Students { get; set; }
+        public DbSet<StudentProgressChange> StudentProgressChanges { get; set; }
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<Material> Materials { get; set; }
         public DbSet<Lecture> Lectures { get; set; }
@@ -21,10 +22,35 @@ namespace Onudhabon.Data
         public DbSet<ForumPostReaction> ForumPostReactions { get; set; }
         public DbSet<ClassPlan> ClassPlans { get; set; }
         public DbSet<Donation> Donations { get; set; }
+        public DbSet<StudyDocument> StudyDocuments { get; set; }
+        public DbSet<StudyDocumentChunk> StudyDocumentChunks { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<StudyDocument>(entity =>
+            {
+                entity.ToTable("StudyDocuments");
+                entity.HasKey(document => document.Id);
+                entity.Property(document => document.OwnerKey).IsRequired().HasMaxLength(128);
+                entity.Property(document => document.FileName).IsRequired().HasMaxLength(255);
+                entity.Property(document => document.CreatedAt).HasColumnType("timestamp without time zone").HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.Property(document => document.ExpiresAt).HasColumnType("timestamp without time zone");
+                entity.HasIndex(document => new { document.OwnerKey, document.ExpiresAt });
+            });
+
+            modelBuilder.Entity<StudyDocumentChunk>(entity =>
+            {
+                entity.ToTable("StudyDocumentChunks");
+                entity.HasKey(chunk => chunk.Id);
+                entity.Property(chunk => chunk.Content).IsRequired();
+                entity.HasIndex(chunk => new { chunk.StudyDocumentId, chunk.PageNumber, chunk.ChunkIndex }).IsUnique();
+                entity.HasOne(chunk => chunk.StudyDocument)
+                    .WithMany(document => document.Chunks)
+                    .HasForeignKey(chunk => chunk.StudyDocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
             // User Entity Configuration
             modelBuilder.Entity<User>(entity =>
@@ -96,6 +122,19 @@ namespace Onudhabon.Data
                 entity.Property(e => e.LastActivityDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
                 entity.Property(e => e.__v).HasDefaultValue(0);
+            });
+
+            modelBuilder.Entity<StudentProgressChange>(entity =>
+            {
+                entity.ToTable("StudentProgressChanges");
+                entity.HasKey(change => change.Id);
+                entity.Property(change => change.ActionType).IsRequired().HasMaxLength(40);
+                entity.Property(change => change.Summary).IsRequired().HasMaxLength(500);
+                entity.Property(change => change.ChangedBy).IsRequired().HasMaxLength(150);
+                entity.Property(change => change.ChangedByRole).IsRequired().HasMaxLength(50);
+                entity.Property(change => change.CreatedAt).HasColumnType("timestamp without time zone").HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.HasOne(change => change.Student).WithMany().HasForeignKey(change => change.StudentId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(change => new { change.StudentId, change.CreatedAt });
             });
 
             // Notification Entity Configuration

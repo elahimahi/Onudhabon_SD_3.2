@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Onudhabon.Data;
 using Onudhabon.Models;
@@ -12,15 +13,18 @@ namespace Onudhabon.Controllers
         private readonly ApplicationDbContext _context;
         private readonly ICloudinaryService _cloudinaryService;
         private readonly ILogger<LectureController> _logger;
+        private readonly IEducationalUploadAiService _uploadAi;
 
         public LectureController(
             ApplicationDbContext context,
             ICloudinaryService cloudinaryService,
-            ILogger<LectureController> logger)
+            ILogger<LectureController> logger,
+            IEducationalUploadAiService uploadAi)
         {
             _context = context;
             _cloudinaryService = cloudinaryService;
             _logger = logger;
+            _uploadAi = uploadAi;
         }
 
         private async Task<List<string>> GetCurrentUserIdentifiersAsync()
@@ -161,6 +165,43 @@ namespace Onudhabon.Controllers
         [HttpPost]
         [Authorize(Roles = "Educator")]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("ai-upload")]
+        [RequestSizeLimit(110L * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 110L * 1024 * 1024)]
+        public async Task<IActionResult> AnalyzeUpload(IFormFile? videoFile, CancellationToken cancellationToken)
+        {
+            if (!await IsCurrentEducatorApprovedAsync()) return Forbid();
+            if (videoFile == null) return BadRequest(new { error = "Select a video file first." });
+            try
+            {
+                var draft = await _uploadAi.AnalyzeLectureAsync(videoFile, cancellationToken);
+                return Json(new { draft });
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+            catch (OperationCanceledException) { return StatusCode(408, new { error = "Video analysis timed out or was cancelled. Try again." }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lecture video analysis failed for educator {Educator}.", User.Identity?.Name);
+                return StatusCode(502, new { error = "AI could not analyze this video right now. Check your connection and try again." });
+            }
+        }
+
+        private async Task<bool> IsCurrentEducatorApprovedAsync()
+        {
+            var id = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(id, out var uid)) return false;
+            var user = await _context.Users.FindAsync(uid);
+            return user != null && !user.IsRestricted && (user.IsVerified ||
+                string.Equals(user.VerificationStatus, "Active", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.VerificationStatus, "Approved", StringComparison.OrdinalIgnoreCase));
+        }
+
+        // POST: /Lecture/Upload
+        [HttpPost]
+        [Authorize(Roles = "Educator")]
+        [ValidateAntiForgeryToken]
+        [RequestSizeLimit(110L * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 110L * 1024 * 1024)]
         public async Task<IActionResult> Upload(LectureUploadViewModel model)
         {
             var userFullName = User.Identity?.Name;

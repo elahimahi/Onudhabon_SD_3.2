@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 
 namespace Onudhabon.Services
 {
@@ -8,6 +9,11 @@ namespace Onudhabon.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly string _apiKey;
         private readonly string _model;
+        private readonly string[] _fallbackModels;
+        private readonly double _temperature;
+        private readonly int _maxOutputTokens;
+        private readonly int _timeoutSeconds;
+        private readonly ILogger<GeminiChatService> _logger;
 
         private static string NormalizeModelName(string? model)
         {
@@ -20,9 +26,10 @@ namespace Onudhabon.Services
             return trimmed;
         }
 
-        public GeminiChatService(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+        public GeminiChatService(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<GeminiChatService> logger)
         {
             _httpClientFactory = httpClientFactory;
+            _logger = logger;
 
             // Read from .env first, then appsettings.json
             _apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
@@ -33,23 +40,34 @@ namespace Onudhabon.Services
                                   ?? configuration["Gemini:Model"];
 
             _model = NormalizeModelName(configuredModel);
+            var configuredFallbacks = Environment.GetEnvironmentVariable("GEMINI_FALLBACK_MODELS")
+                                      ?? string.Join(',', configuration.GetSection("Gemini:FallbackModels").Get<string[]>() ?? []);
+            _fallbackModels = configuredFallbacks.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(NormalizeModelName)
+                .Where(model => !string.Equals(model, _model, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray();
+
+            _temperature = ParseDouble(Environment.GetEnvironmentVariable("GEMINI_TEMPERATURE") ?? configuration["Gemini:Temperature"], 0.2, 0, 1);
+            _maxOutputTokens = ParseInt(Environment.GetEnvironmentVariable("GEMINI_MAX_OUTPUT_TOKENS") ?? configuration["Gemini:MaxOutputTokens"], 1200, 128, 4096);
+            _timeoutSeconds = ParseInt(Environment.GetEnvironmentVariable("GEMINI_TIMEOUT_SECONDS") ?? configuration["Gemini:TimeoutSeconds"], 20, 5, 60);
         }
 
-        public async Task<string> GetChatResponseAsync(string userMessage, string? systemContext = null)
+        public async Task<string> GetChatResponseAsync(string userMessage, string? systemContext = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
-                return "Gemini API key is not configured. Please set GEMINI_API_KEY in your .env file or appsettings.json.";
+                _logger.LogError("Gemini API key is not configured.");
+                return "AI service is temporarily unavailable. Please try again later.";
             }
 
-            var result = await SendGenerateContentRequestAsync(_model, userMessage, systemContext);
+            var result = await SendGenerateContentRequestAsync(_model, userMessage, systemContext, cancellationToken);
             if (result.IsSuccess)
             {
                 return result.Text;
             }
 
-            // If the primary model failed (404 Not Found, 503 Overloaded, or 429 Rate Limit),
-            // swiftly try modern high-speed fallback models
             var statusCode = result.StatusCode;
             bool shouldFallback = statusCode == System.Net.HttpStatusCode.NotFound ||
                                   statusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
@@ -57,13 +75,9 @@ namespace Onudhabon.Services
 
             if (shouldFallback)
             {
-                var fallbacks = new[] { "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash" };
-                foreach (var fallbackModel in fallbacks)
+                foreach (var fallbackModel in _fallbackModels)
                 {
-                    if (string.Equals(fallbackModel, _model, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var fallbackResult = await SendGenerateContentRequestAsync(fallbackModel, userMessage, systemContext);
+                    var fallbackResult = await SendGenerateContentRequestAsync(fallbackModel, userMessage, systemContext, cancellationToken);
                     if (fallbackResult.IsSuccess)
                     {
                         return fallbackResult.Text;
@@ -71,13 +85,14 @@ namespace Onudhabon.Services
                 }
             }
 
-            return result.ErrorMessage;
+            _logger.LogWarning("Gemini response failed. HTTP status: {StatusCode}.", result.StatusCode);
+            return "AI service is temporarily unavailable. Please try again later.";
         }
 
         private async Task<(bool IsSuccess, string Text, string ErrorMessage, System.Net.HttpStatusCode? StatusCode)> SendGenerateContentRequestAsync(
-            string modelName, string userMessage, string? systemContext)
+            string modelName, string userMessage, string? systemContext, CancellationToken cancellationToken)
         {
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}";
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent";
 
             var requestBody = new Dictionary<string, object>();
 
@@ -100,8 +115,8 @@ namespace Onudhabon.Services
 
             requestBody["generationConfig"] = new
             {
-                temperature = 0.2,
-                maxOutputTokens = 1200,
+                temperature = _temperature,
+                maxOutputTokens = _maxOutputTokens,
                 topP = 0.95
             };
 
@@ -113,15 +128,16 @@ namespace Onudhabon.Services
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(20);
-
-                var response = await client.PostAsync(url, content);
-                var responseString = await response.Content.ReadAsStringAsync();
+                client.Timeout = TimeSpan.FromSeconds(_timeoutSeconds);
+                using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                request.Headers.TryAddWithoutValidation("x-goog-api-key", _apiKey);
+                using var response = await client.SendAsync(request, cancellationToken);
+                var responseString = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    string extractedError = ParseErrorMessage(responseString, response.StatusCode);
-                    return (false, string.Empty, extractedError, response.StatusCode);
+                    _logger.LogWarning("Gemini request for model {ModelName} returned HTTP {StatusCode}.", modelName, response.StatusCode);
+                    return (false, string.Empty, "AI service is temporarily unavailable. Please try again later.", response.StatusCode);
                 }
 
                 using var doc = JsonDocument.Parse(responseString);
@@ -138,35 +154,28 @@ namespace Onudhabon.Services
                     }
                 }
 
-                return (false, string.Empty, "No response received from Gemini.", response.StatusCode);
+                _logger.LogWarning("Gemini returned an empty response for model {ModelName}.", modelName);
+                return (false, string.Empty, "AI service is temporarily unavailable. Please try again later.", response.StatusCode);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                return (false, string.Empty, $"Error connecting to Gemini API: {ex.Message}", null);
+                _logger.LogWarning(ex, "Could not complete a Gemini request for model {ModelName}.", modelName);
+                return (false, string.Empty, "AI service is temporarily unavailable. Please try again later.", null);
             }
         }
 
-        private static string ParseErrorMessage(string responseString, System.Net.HttpStatusCode statusCode)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(responseString);
-                if (doc.RootElement.TryGetProperty("error", out var errorObj) &&
-                    errorObj.TryGetProperty("message", out var msgElement))
-                {
-                    var msg = msgElement.GetString();
-                    if (!string.IsNullOrWhiteSpace(msg))
-                    {
-                        return $"Gemini API Error ({statusCode}): {msg}";
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore parse errors and fallback
-            }
+        private static double ParseDouble(string? value, double fallback, double min, double max) =>
+            double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed >= min && parsed <= max
+                ? parsed
+                : fallback;
 
-            return $"Gemini API Error ({statusCode}): {responseString}";
-        }
+        private static int ParseInt(string? value, int fallback, int min, int max) =>
+            int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= min && parsed <= max
+                ? parsed
+                : fallback;
     }
 }

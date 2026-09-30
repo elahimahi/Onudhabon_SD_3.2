@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Onudhabon.Data;
 using Onudhabon.Models;
@@ -12,15 +13,18 @@ namespace Onudhabon.Controllers
         private readonly ApplicationDbContext _context;
         private readonly ICloudinaryService _cloudinaryService;
         private readonly ILogger<MaterialController> _logger;
+        private readonly IEducationalUploadAiService _uploadAi;
 
         public MaterialController(
             ApplicationDbContext context,
             ICloudinaryService cloudinaryService,
-            ILogger<MaterialController> logger)
+            ILogger<MaterialController> logger,
+            IEducationalUploadAiService uploadAi)
         {
             _context = context;
             _cloudinaryService = cloudinaryService;
             _logger = logger;
+            _uploadAi = uploadAi;
         }
 
         private async Task<List<string>> GetCurrentUserIdentifiersAsync()
@@ -157,10 +161,46 @@ namespace Onudhabon.Controllers
             });
         }
 
+        [HttpPost]
+        [Authorize(Roles = "Educator")]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting("ai-upload")]
+        [RequestSizeLimit(26L * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 26L * 1024 * 1024)]
+        public async Task<IActionResult> AnalyzeUpload(IFormFile? materialFile, CancellationToken cancellationToken)
+        {
+            if (!await IsCurrentEducatorApprovedAsync()) return Forbid();
+            if (materialFile == null) return BadRequest(new { error = "Select a document first." });
+            try
+            {
+                var draft = await _uploadAi.AnalyzeMaterialAsync(materialFile, cancellationToken);
+                return Json(new { draft });
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+            catch (OperationCanceledException) { return StatusCode(408, new { error = "Document analysis was cancelled. Try again." }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Study material analysis failed for educator {Educator}.", User.Identity?.Name);
+                return StatusCode(502, new { error = "AI could not analyze this document right now. Check your connection and try again." });
+            }
+        }
+
+        private async Task<bool> IsCurrentEducatorApprovedAsync()
+        {
+            var id = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(id, out var uid)) return false;
+            var user = await _context.Users.FindAsync(uid);
+            return user != null && !user.IsRestricted && (user.IsVerified ||
+                string.Equals(user.VerificationStatus, "Active", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.VerificationStatus, "Approved", StringComparison.OrdinalIgnoreCase));
+        }
+
         // POST: /Material/Upload
         [HttpPost]
         [Authorize(Roles = "Educator")]
         [ValidateAntiForgeryToken]
+        [RequestSizeLimit(26L * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 26L * 1024 * 1024)]
         public async Task<IActionResult> Upload(MaterialUploadViewModel model)
         {
             var userFullName = User.Identity?.Name;

@@ -149,7 +149,13 @@ namespace Onudhabon.Models
 
         public bool CanUpdateProgress => !IsDeclined;
 
-        public bool CanPromote => OverallProgressPercent >= 100.0 && !IsDeclined;
+        public bool HasPassingAssessment => SubjectProgress.Count > 0 && SubjectProgress.All(s =>
+            !string.IsNullOrWhiteSpace(s.DisplayGrade) &&
+            !string.Equals(s.DisplayGrade, "Pending", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(s.DisplayGrade, "Not Evaluated", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(s.DisplayGrade, "F", StringComparison.OrdinalIgnoreCase));
+
+        public bool CanPromote => OverallProgressPercent >= 100.0 && HasPassingAssessment && !IsDeclined;
 
         public string? NextClassLevel
         {
@@ -296,7 +302,12 @@ namespace Onudhabon.Models
         public int AvgAttendance => Cards.Any() ? (int)Math.Round(Cards.Average(c => c.Student.AttendancePercentage)) : 0;
         public string? SearchQuery { get; set; }
         public string? SelectedClass { get; set; }
+        public string? SelectedSubject { get; set; }
+        public string? ProgressStatus { get; set; }
         public List<string> AvailableClasses { get; set; } = new();
+        public List<string> AvailableSubjects { get; set; } = new();
+        public List<StudentProgressChange> RecentChanges { get; set; } = new();
+        public bool IsAdminView { get; set; }
     }
 
     public class UpdateStudentProgressInput

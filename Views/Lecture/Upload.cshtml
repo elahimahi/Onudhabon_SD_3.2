@@ -1,114 +1,86 @@
 @model Onudhabon.Models.LectureUploadViewModel
-
 @{
-    ViewData["Title"] = "Upload Lecture Video - Onudhabon";
+    ViewData["Title"] = "AI Assisted Lecture Upload - Onudhabon";
 }
 
 <div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <a asp-action="Index" class="btn btn-outline-secondary btn-sm px-3 rounded-pill">
-                    ← Back to Lectures
-                </a>
+    <div class="row justify-content-center"><div class="col-lg-9 col-xl-8">
+        <a asp-action="Index" class="btn btn-outline-secondary btn-sm rounded-pill mb-3">← Back to Lectures</a>
+        <div class="card border-0 shadow-sm rounded-4 p-4 p-md-5">
+            <div class="text-center mb-4">
+                <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex p-3 mb-2"><i class="bi bi-stars fs-3"></i></div>
+                <h2 class="fw-bold">Upload a Lecture with AI</h2>
+                <p class="text-muted mb-1">Choose your video. AI will draft its title, class, subject, topic and summary.</p>
+                <small class="text-muted">You review and edit everything before submitting it for approval.</small>
             </div>
-
-            <div class="card border-0 shadow-sm rounded-4 p-4 p-md-5">
-                <div class="text-center mb-4">
-                    <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex p-3 mb-2">
-                        <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <h3 class="fw-bold text-dark">Upload Lecture Video</h3>
-                    <p class="text-muted">Videos are stored in <code>onudhabon/lectures</code> with eager thumbnail generation.</p>
+            <form id="lectureUploadForm" asp-action="Upload" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger rounded-3"></div>
+                <div class="mb-3">
+                    <label asp-for="VideoFile" class="form-label fw-semibold">Lecture video *</label>
+                    <input asp-for="VideoFile" type="file" accept="video/mp4,video/webm,video/mov,video/mpeg,video/avi,video/x-flv,video/wmv,video/3gpp,.mp4,.m4v,.webm,.mov,.mpeg,.mpg,.avi,.flv,.wmv,.3gp" class="form-control form-control-lg" required />
+                    <div class="form-text">MP4, WebM, MOV, MPEG, AVI, FLV, WMV or 3GP · up to 100 MB for AI analysis. Your video is removed from Gemini after analysis.</div>
+                    <span asp-validation-for="VideoFile" class="text-danger small"></span>
                 </div>
+                <div id="lectureAiStatus" class="small mb-3" role="status" aria-live="polite"></div>
+                <button id="analyzeLectureButton" type="button" class="btn btn-outline-primary rounded-pill px-4 mb-4"><i class="bi bi-stars me-1"></i> Analyze video with AI</button>
 
-                <form asp-action="Upload" method="post" enctype="multipart/form-data">
-                    @Html.AntiForgeryToken()
-
-                    <div asp-validation-summary="ModelOnly" class="alert alert-danger rounded-3 mb-3"></div>
-
-                    <!-- Title -->
-                    <div class="mb-3">
-                        <label asp-for="Title" class="form-label fw-semibold">Lecture Title *</label>
-                        <input asp-for="Title" class="form-control form-control-lg rounded-3" placeholder="e.g. Chapter 3: Force and Motion - Part 1" />
-                        <span asp-validation-for="Title" class="text-danger small"></span>
-                    </div>
-
-                    <!-- Class & Subject & Topic -->
+                <section id="lectureDraft" class="border rounded-4 p-3 p-md-4 bg-light" hidden>
+                    <h5 class="fw-bold mb-1">Review AI draft</h5>
+                    <p class="text-muted small">AI suggestions can be wrong. Check the lesson and correct each field before submitting.</p>
+                    <div class="mb-3"><label asp-for="Title" class="form-label fw-semibold">Lecture title *</label><input asp-for="Title" class="form-control" maxlength="255" required /><span asp-validation-for="Title" class="text-danger small"></span></div>
                     <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <label asp-for="ClassLevel" class="form-label fw-semibold">Class Level *</label>
-                            <select asp-for="ClassLevel" class="form-select rounded-3">
-                                <option value="">Select Class</option>
-                                @for (int i = 1; i <= 12; i++)
-                                {
-                                    <option value="@i">Class @i</option>
-                                }
-                            </select>
-                            <span asp-validation-for="ClassLevel" class="text-danger small"></span>
-                        </div>
-
-                        <div class="col-md-4">
-                            <label asp-for="Subject" class="form-label fw-semibold">Subject *</label>
-                            <input asp-for="Subject" class="form-control rounded-3" placeholder="e.g. Physics, Math..." />
-                            <span asp-validation-for="Subject" class="text-danger small"></span>
-                        </div>
-
-                        <div class="col-md-4">
-                            <label asp-for="Topic" class="form-label fw-semibold">Topic *</label>
-                            <input asp-for="Topic" class="form-control rounded-3" placeholder="e.g. Newton's Laws" />
-                            <span asp-validation-for="Topic" class="text-danger small"></span>
-                        </div>
+                        <div class="col-md-4"><label asp-for="ClassLevel" class="form-label fw-semibold">Class *</label><select asp-for="ClassLevel" class="form-select" required><option value="">Choose class</option>@for (var i = 1; i <= 12; i++) { <option value="@i">Class @i</option> }</select></div>
+                        <div class="col-md-4"><label asp-for="Subject" class="form-label fw-semibold">Subject *</label><input asp-for="Subject" class="form-control" maxlength="100" required /></div>
+                        <div class="col-md-4"><label asp-for="Topic" class="form-label fw-semibold">Topic *</label><input asp-for="Topic" class="form-control" maxlength="150" required /></div>
                     </div>
-
-                    <!-- Medium & Instructor -->
                     <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label asp-for="Version" class="form-label fw-semibold">Medium / Version</label>
-                            <select asp-for="Version" class="form-select rounded-3">
-                                <option value="Bangla">Bangla Medium</option>
-                                <option value="English">English Medium</option>
-                                <option value="English Version">English Version</option>
-                            </select>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label asp-for="Instructor" class="form-label fw-semibold">Instructor Name</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-light text-muted border-end-0 rounded-start-3">
-                                    <i class="bi bi-person-fill"></i>
-                                </span>
-                                <input asp-for="Instructor" class="form-control rounded-end-3 bg-light" readonly tabindex="-1" style="cursor: not-allowed;" />
-                            </div>
-                            <span class="text-muted small">Fetched automatically from your profile name.</span>
-                        </div>
+                        <div class="col-md-6"><label asp-for="Version" class="form-label fw-semibold">Medium / Version</label><select asp-for="Version" class="form-select"><option value="Bangla">Bangla Medium</option><option value="English">English Medium</option><option value="English Version">English Version</option></select></div>
+                        <div class="col-md-6"><label asp-for="Instructor" class="form-label fw-semibold">Educator</label><input asp-for="Instructor" class="form-control" readonly /></div>
                     </div>
-
-                    <!-- Description -->
-                    <div class="mb-3">
-                        <label asp-for="Description" class="form-label fw-semibold">Lecture Summary / Outline</label>
-                        <textarea asp-for="Description" rows="3" class="form-control rounded-3" placeholder="Outline of learning objectives covered in this lecture video..."></textarea>
-                    </div>
-
-                    <!-- Video File Upload (Cloudinary) -->
-                    <div class="mb-4">
-                        <label asp-for="VideoFile" class="form-label fw-semibold">Select Video File (MP4, MKV, WebM) *</label>
-                        <input asp-for="VideoFile" type="file" accept="video/*" class="form-control form-control-lg rounded-3" />
-                        <span class="text-muted small d-block mt-1">Eager 300x200 crop-fill thumbnail will be generated automatically upon upload.</span>
-                        <span asp-validation-for="VideoFile" class="text-danger small"></span>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-lg w-100 rounded-pill shadow-sm">
-                        Upload & Submit Lecture (Status: Pending)
-                    </button>
-                </form>
-            </div>
+                    <div class="mb-4"><label asp-for="Description" class="form-label fw-semibold">Learning summary</label><textarea asp-for="Description" rows="4" class="form-control" maxlength="2000"></textarea></div>
+                    <button id="submitLectureButton" type="submit" class="btn btn-primary btn-lg w-100 rounded-pill">Review and submit lecture (Pending approval)</button>
+                </section>
+            </form>
         </div>
-    </div>
+    </div></div>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const form = document.getElementById('lectureUploadForm');
+            const file = document.getElementById('VideoFile');
+            const analyze = document.getElementById('analyzeLectureButton');
+            const draft = document.getElementById('lectureDraft');
+            const status = document.getElementById('lectureAiStatus');
+            let analyzedFile = '';
+            file.addEventListener('change', () => { draft.hidden = true; analyzedFile = ''; status.textContent = ''; });
+            analyze.addEventListener('click', async () => {
+                if (!file.files.length) { status.className = 'small mb-3 text-danger'; status.textContent = 'Choose a video first.'; return; }
+                const data = new FormData(form);
+                analyze.disabled = true; status.className = 'small mb-3 text-primary'; status.textContent = 'AI is reviewing the video. Larger videos may take a few minutes…';
+                try {
+                    const response = await fetch('@Url.Action("AnalyzeUpload", "Lecture")', { method: 'POST', body: data, headers: { 'RequestVerificationToken': form.querySelector('[name="__RequestVerificationToken"]').value } });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Analysis failed. Please try again.');
+                    const values = result.draft;
+                    for (const key of ['Title', 'Description', 'ClassLevel', 'Subject', 'Topic', 'Version']) {
+                        const field = document.getElementById(key);
+                        if (field) field.value = values[key.charAt(0).toLowerCase() + key.slice(1)] || '';
+                    }
+                    analyzedFile = file.files[0].name + ':' + file.files[0].size + ':' + file.files[0].lastModified;
+                    draft.hidden = false; status.className = 'small mb-3 text-success'; status.textContent = 'Draft ready. Review and correct the suggested details below.';
+                    draft.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } catch (error) { status.className = 'small mb-3 text-danger'; status.textContent = error.message; }
+                finally { analyze.disabled = false; }
+            });
+            form.addEventListener('submit', event => {
+                const current = file.files[0];
+                const signature = current ? current.name + ':' + current.size + ':' + current.lastModified : '';
+                if (!draft.hidden && signature !== analyzedFile) { event.preventDefault(); status.className = 'small mb-3 text-danger'; status.textContent = 'The selected file changed. Analyze it again before submitting.'; }
+            });
+        })();
+    </script>
 }
