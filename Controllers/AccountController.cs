@@ -137,6 +137,18 @@ namespace Onudhabon.Controllers
                 return View(model);
             }
 
+            // Demo mode: email verification also approves new accounts. This also
+            // upgrades accounts that were verified before demo approval was enabled.
+            if (!string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase) && user.IsEmailVerified &&
+                (!user.IsVerified ||
+                 (!string.Equals(user.VerificationStatus, "Active", StringComparison.OrdinalIgnoreCase) &&
+                  !string.Equals(user.VerificationStatus, "Approved", StringComparison.OrdinalIgnoreCase))))
+            {
+                user.IsVerified = true;
+                user.VerificationStatus = "Active";
+                await _context.SaveChangesAsync();
+            }
+
             // Check if registered user account is pending approval by Admin
             if (!string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
             {
@@ -380,7 +392,7 @@ namespace Onudhabon.Controllers
 
             if (user.IsEmailVerified)
             {
-                TempData["SuccessMessage"] = "Your email address is already verified! Your account is currently pending administrator approval.";
+                TempData["SuccessMessage"] = "Your email address is already verified! You can now sign in.";
                 return RedirectToAction(nameof(Login), new { returnUrl });
             }
 
@@ -422,7 +434,7 @@ namespace Onudhabon.Controllers
 
             if (user.IsEmailVerified)
             {
-                TempData["SuccessMessage"] = "Your email address is already verified! Your account is currently pending administrator approval.";
+                TempData["SuccessMessage"] = "Your email address is already verified! You can now sign in.";
                 return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
             }
 
@@ -441,13 +453,15 @@ namespace Onudhabon.Controllers
 
             // Successfully verified via OTP
             user.IsEmailVerified = true;
+            user.IsVerified = true;
+            user.VerificationStatus = "Active";
             user.EmailOtp = null;
             user.EmailOtpExpiry = null;
             user.EmailVerificationToken = null;
             user.EmailVerificationTokenExpiry = null;
             await _context.SaveChangesAsync();
 
-            TempData["SuccessMessage"] = "Email verified successfully! Your account application has been submitted for administrator review. Once approved, you will be able to sign in.";
+            TempData["SuccessMessage"] = "Email verified successfully! Your account is approved for this demonstration, and you can now sign in.";
             return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
         }
 
@@ -473,7 +487,7 @@ namespace Onudhabon.Controllers
 
             if (user.IsEmailVerified)
             {
-                TempData["SuccessMessage"] = "Your email address is already verified! Your account is currently awaiting administrator review.";
+                TempData["SuccessMessage"] = "Your email address is already verified! You can now sign in.";
                 return RedirectToAction(nameof(Login), new { returnUrl });
             }
 
@@ -522,7 +536,7 @@ namespace Onudhabon.Controllers
                 ViewBag.Success = true;
                 ViewBag.AlreadyVerified = true;
                 ViewBag.Title = "Email Already Verified";
-                ViewBag.Message = "Your email address has already been verified. Your account is currently pending administrator approval.";
+                ViewBag.Message = "Your email address has already been verified. You can now sign in.";
                 return View();
             }
 
@@ -538,6 +552,8 @@ namespace Onudhabon.Controllers
 
             // Successfully verified!
             user.IsEmailVerified = true;
+            user.IsVerified = true;
+            user.VerificationStatus = "Active";
             user.EmailVerificationToken = null;
             user.EmailVerificationTokenExpiry = null;
             user.EmailOtp = null;
@@ -546,7 +562,7 @@ namespace Onudhabon.Controllers
 
             ViewBag.Success = true;
             ViewBag.Title = "Email Verified Successfully!";
-            ViewBag.Message = "Your email address has been successfully verified! An administrator will now review your account application. Once approved, you will be able to log in.";
+            ViewBag.Message = "Your email address has been successfully verified! Your account is approved for this demonstration, and you can now log in.";
             return View();
         }
 
@@ -572,7 +588,7 @@ namespace Onudhabon.Controllers
 
             if (user.IsEmailVerified)
             {
-                TempData["SuccessMessage"] = "Your email address is already verified! Your account is currently awaiting administrator review.";
+                TempData["SuccessMessage"] = "Your email address is already verified! You can now sign in.";
                 return RedirectToAction(nameof(Login));
             }
 

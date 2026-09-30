@@ -63,6 +63,8 @@
                 </div>
             }
 
+            <div class="alert alert-info py-2 small" role="status">New accounts usually require administrator approval. For demonstration purposes, approval is temporarily automatic after email verification.</div>
+
             <!-- Login Form -->
             <div class="form-panel">
                 <form asp-controller="Account" asp-action="Login" asp-route-returnUrl="@ViewData["ReturnUrl"]" method="post">
